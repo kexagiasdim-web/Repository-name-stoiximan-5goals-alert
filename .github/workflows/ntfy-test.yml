@@ -1,0 +1,15 @@
+name: ntfy test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  send-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send ntfy test
+        run: |
+          curl -X POST "https://ntfy.sh/stoiximan-5goals-dim-7429" \
+            -H "Title: GitHub ntfy test" \
+            -H "Priority: 4" \
+            -d "Δοκιμή από GitHub Actions. Αν το βλέπεις στο κινητό, το cloud κομμάτι δουλεύει."
