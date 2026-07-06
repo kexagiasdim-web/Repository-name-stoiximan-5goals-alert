@@ -1,0 +1,119 @@
+name: Football 5 goals alert
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check live football scores and notify
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import urllib.request
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          NTFY_TOPIC = "stoiximan-5goals-dim-7429"
+          STATE_FILE = ".alerted_5goals.json"
+          ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard"
+
+          def load_state():
+              if os.path.exists(STATE_FILE):
+                  with open(STATE_FILE, "r", encoding="utf-8") as f:
+                      return json.load(f)
+              return {"alerted": []}
+
+          def save_state(state):
+              with open(STATE_FILE, "w", encoding="utf-8") as f:
+                  json.dump(state, f, ensure_ascii=False, indent=2)
+
+          def get_json(url):
+              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.loads(r.read().decode("utf-8"))
+
+          def notify(title, message):
+              req = urllib.request.Request(
+                  f"https://ntfy.sh/{NTFY_TOPIC}",
+                  data=message.encode("utf-8"),
+                  method="POST",
+                  headers={
+                      "Title": title,
+                      "Priority": "4",
+                      "Tags": "soccer,goal",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  print(r.read().decode("utf-8"))
+
+          state = load_state()
+          alerted = set(state.get("alerted", []))
+          data = get_json(ESPN_URL)
+
+          now_gr = datetime.now(ZoneInfo("Europe/Athens")).strftime("%Y-%m-%d %H:%M:%S")
+          new_alerts = []
+
+          for event in data.get("events", []):
+              competition = (event.get("competitions") or [{}])[0]
+              status = competition.get("status", {}).get("type", {})
+              if status.get("state") != "in":
+                  continue
+
+              league = event.get("season", {}).get("slug") or competition.get("altGameNote") or "Football"
+              competitors = competition.get("competitors", [])
+              if len(competitors) < 2:
+                  continue
+
+              teams = []
+              for c in competitors:
+                  team = c.get("team", {})
+                  teams.append({
+                      "id": team.get("id", team.get("displayName", "")),
+                      "name": team.get("displayName", team.get("shortDisplayName", "Team")),
+                      "score": int(c.get("score") or 0),
+                  })
+
+              score_text = f"{teams[0]['name']} {teams[0]['score']} - {teams[1]['score']} {teams[1]['name']}"
+              minute = competition.get("status", {}).get("displayClock") or status.get("shortDetail", "")
+
+              for t in teams:
+                  if t["score"] >= 5:
+                      key = f"{event.get('id')}:{t['id']}:5plus"
+                      if key in alerted:
+                          continue
+
+                      title = "Ομάδα έφτασε τα 5 γκολ"
+                      message = (
+                          f"⚽ {t['name']} έφτασε τα {t['score']} γκολ!\n"
+                          f"Αγώνας: {score_text}\n"
+                          f"Διοργάνωση: {league}\n"
+                          f"Χρόνος αγώνα: {minute}\n"
+                          f"Ώρα ελέγχου: {now_gr} Ελλάδας"
+                      )
+                      notify(title, message)
+                      new_alerts.append(key)
+
+          if new_alerts:
+              state["alerted"] = sorted(alerted.union(new_alerts))
+              save_state(state)
+
+              subprocess.run(["git", "config", "user.name", "github-actions"], check=True)
+              subprocess.run(["git", "config", "user.email", "github-actions@github.com"], check=True)
+              subprocess.run(["git", "add", STATE_FILE], check=True)
+              subprocess.run(["git", "commit", "-m", "Update alerted 5-goal matches"], check=True)
+              subprocess.run(["git", "push"], check=True)
+          else:
+              print("No new live team with 5+ goals found.")
+          PY
