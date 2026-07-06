@@ -2,6 +2,7 @@ name: Football 5 goals alert
 
 on:
   workflow_dispatch:
+  push:
   schedule:
     - cron: "*/5 * * * *"
 
