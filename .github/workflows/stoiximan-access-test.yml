@@ -1,0 +1,16 @@
+name: Stoiximan access test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-access:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Stoiximan live access
+        run: |
+          echo "Testing Stoiximan access..."
+          curl -L -I "https://www.stoiximan.gr/live/" || true
+          echo ""
+          echo "Final URL/body check:"
+          curl -L -s "https://www.stoiximan.gr/live/" | head -c 1000
